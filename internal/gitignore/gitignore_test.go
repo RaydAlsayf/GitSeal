@@ -1,0 +1,23 @@
+package gitignore
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/raydalsayf/gitseal/internal/projectconfig"
+)
+
+func TestExpected(t *testing.T) {
+	p := projectconfig.EmptyProject()
+	p.ProtectedFiles = []projectconfig.ProtectedFile{{Source: "z", Encrypted: "z.age"}, {Source: "a", Encrypted: "a.age"}}
+	data, err := Render([]byte("user\n"), p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), ".gitseal.tmp.*\n/a\n/z\n") {
+		t.Fatalf("unexpected block:\n%s", data)
+	}
+	if err := Validate(data, p); err != nil {
+		t.Fatal(err)
+	}
+}

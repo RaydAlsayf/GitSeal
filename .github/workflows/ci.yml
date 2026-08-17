@@ -1,0 +1,74 @@
+name: candidate-validation
+
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  GOENV: off
+  GOFLAGS: -mod=readonly
+  GOPROXY: 'off'
+  GOSUMDB: sum.golang.org
+  GOTOOLCHAIN: local
+
+concurrency:
+  group: candidate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: go-${{ matrix.os }}
+    env:
+      GOCACHE: ${{ github.workspace }}/../gitseal-go-build-cache-${{ matrix.os }}
+      GOMODCACHE: ${{ github.workspace }}/../gitseal-go-module-cache-${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out candidate without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          submodules: false
+          lfs: false
+      - name: Install pinned Go toolchain
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.6
+          cache: false
+      - name: Materialize the reviewed module graph
+        env:
+          GOPROXY: https://proxy.golang.org
+        run: go mod download
+      - name: Verify materialized modules
+        run: go mod verify
+      - name: Check formatting
+        shell: bash
+        run: test -z "$(gofmt -l .)"
+      - name: Unit and integration tests
+        run: go test -count=1 ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Race tests
+        if: runner.os == 'Linux'
+        run: go test -race -count=1 ./...
+      - name: Scan reachable vulnerabilities with pinned official tooling
+        env:
+          GOPROXY: https://proxy.golang.org
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+          go mod verify
+      - name: Build deterministic review binaries
+        shell: bash
+        run: sh ./scripts/build-reproducible.sh dist

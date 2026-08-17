@@ -1,0 +1,60 @@
+name: release-build-review
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOENV: off
+  GOFLAGS: -mod=readonly
+  GOPROXY: 'off'
+  GOSUMDB: sum.golang.org
+  GOTOOLCHAIN: local
+
+jobs:
+  build-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOCACHE: ${{ github.workspace }}/../gitseal-go-build-cache
+      GOMODCACHE: ${{ github.workspace }}/../gitseal-go-module-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.6
+          cache: false
+      - name: Materialize the reviewed module graph
+        env:
+          GOPROXY: https://proxy.golang.org
+        run: go mod download
+      - name: Verify materialized modules
+        run: go mod verify
+      - name: Test the candidate tree
+        run: go test -count=1 ./...
+      - name: Build deterministic review binaries
+        id: review_build
+        run: sh ./scripts/build-reproducible.sh dist
+      - name: Upload complete review artifacts only
+        if: ${{ steps.review_build.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gitseal-unpublished-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Refuse publication until independent release gates exist
+        shell: bash
+        run: |
+          echo 'Review artifacts are not publishable releases.' >&2
+          echo 'Reproducibility comparison, SBOM, provenance, signing, native tests, and the trusted validator remain release blockers.' >&2
+          exit 1
+
+# This workflow never creates a release or writes repository contents. Public
+# release publication remains intentionally unavailable until the release gate
+# in SPECIFICATION.md and docs/release-verification.md is satisfied.

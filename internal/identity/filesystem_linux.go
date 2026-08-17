@@ -1,0 +1,53 @@
+//go:build linux
+
+package identity
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"golang.org/x/sys/unix"
+)
+
+func validateIdentityFilesystem(name string) error {
+	existing, err := nearestExistingDirectory(name)
+	if err != nil {
+		return err
+	}
+	var information unix.Statfs_t
+	if err := unix.Statfs(existing, &information); err != nil {
+		return fmt.Errorf("inspect identity filesystem: %w", err)
+	}
+	switch information.Type {
+	case unix.NFS_SUPER_MAGIC, unix.CIFS_SUPER_MAGIC, unix.SMB_SUPER_MAGIC,
+		unix.SMB2_SUPER_MAGIC, unix.AFS_SUPER_MAGIC, unix.CODA_SUPER_MAGIC,
+		unix.NCP_SUPER_MAGIC, unix.CEPH_SUPER_MAGIC, unix.FUSE_SUPER_MAGIC,
+		unix.OVERLAYFS_SUPER_MAGIC, 0x01021997: // V9FS_MAGIC
+		return errors.New("identity storage is on a network, userspace, or virtual filesystem; V1 has no persisted location-risk acceptance")
+	default:
+		return nil
+	}
+}
+
+func nearestExistingDirectory(name string) (string, error) {
+	current := filepath.Clean(name)
+	for {
+		info, err := os.Lstat(current)
+		if err == nil {
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return "", errors.New("identity storage ancestor is linked or not a directory")
+			}
+			return current, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", errors.New("identity storage has no existing filesystem ancestor")
+		}
+		current = parent
+	}
+}

@@ -1,0 +1,7 @@
+# Local build and test output
+/bin/
+/coverage/
+*.out
+
+# GitSeal plaintext publication temporaries are permanently ignored.
+.gitseal.tmp.*

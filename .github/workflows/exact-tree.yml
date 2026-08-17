@@ -1,0 +1,36 @@
+name: exact-tree-security-gate
+
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+
+jobs:
+  trusted-validator-required:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact proposed merge or merge-group tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+          submodules: false
+          lfs: false
+      - name: Refuse an unprovisioned trust boundary
+        shell: bash
+        run: |
+          echo 'No independently reviewed GitSeal release validator is pinned yet.' >&2
+          echo 'This required gate intentionally fails closed; candidate source must never validate itself.' >&2
+          exit 1
+
+# Release blocker: replace only the fail-closed step with an absolute invocation
+# of a separately reviewed validator artifact whose version and SHA-256 are
+# committed here. It must run:
+#   /absolute/pinned/gitseal verify --source "$GITHUB_SHA" --require-project
+# Repository rules must bind this workflow/check to the trusted GitHub App or an
+# immutable required workflow. Candidate-controlled workflow code is not trust.

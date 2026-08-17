@@ -1,0 +1,54 @@
+name: codeql
+
+on:
+  pull_request:
+  merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * 2'
+
+permissions:
+  contents: read
+
+env:
+  GOENV: off
+  GOFLAGS: -mod=readonly
+  GOPROXY: 'off'
+  GOSUMDB: sum.golang.org
+  GOTOOLCHAIN: local
+
+jobs:
+  analyze:
+    permissions:
+      contents: read
+      security-events: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOCACHE: ${{ github.workspace }}/../gitseal-codeql-build-cache
+      GOMODCACHE: ${{ github.workspace }}/../gitseal-codeql-module-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: 1.26.6
+          cache: false
+      - name: Materialize the reviewed module graph
+        env:
+          GOPROXY: https://proxy.golang.org
+        run: go mod download
+      - name: Verify materialized modules
+        run: go mod verify
+      - uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        with:
+          languages: go
+          build-mode: manual
+      - name: Build the analyzed Go packages offline
+        run: go build ./...
+      - uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
